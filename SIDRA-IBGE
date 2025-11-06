@@ -1,0 +1,110 @@
+#1. COLETOR DADOS DO SIDRA
+#region
+
+# 1.1. CARREGAR BIBLIOTECAS E CONFIGURAÇÕES GLOBAIS
+#region
+# Primeira coisa deve ser rodar isso aqui no terminal pra ele poder baixar as bibliotecas necessárias
+#%pip install pandas openpyxl ipeadatapy sidrapy plotly 
+
+# Depois baixamos as seguintes bibliotecas
+# 1.1 Bibliotecas
+import numpy as np
+import requests
+import truststore
+truststore.inject_into_ssl()
+from sidrapy import get_table
+import sidrapy
+import ssl
+import pandas as pd
+#endregion
+
+
+
+# 1.2. PARAMETROS
+#region
+
+tabela = '7242'          # Tabela no site do SIDRA que contém a variável que queremos (https://sidra.ibge.gov.br/home/pimpfbr/brasil)
+variable = '806'         # Através do Código da tabela, buscamos o código da variével que queremos, pode achar pela tabela (https://apisidra.ibge.gov.br/)
+cnae = '117000'          # No mesmo lugar do passo anterior vemos o código CNAE da atividade buscado
+
+#Todos os valores devem ser escritos como strings, etre 'aspas'
+# O niível territorial vai ser sempre n1 pois esses dados só são siponibilizados no agregado nacional
+# O período de busca está como máximo possível
+#endregion
+
+
+
+# 1.3. REQUISIÇÃO VIA API DO SIDRA 
+#region
+
+
+# Aqui ele monta a url segundo nossos parâmetros dados e pede TODOS os períodos
+url = f"https://apisidra.ibge.gov.br/values/t/{tabela}/n1/all/v/{variable}/c12762/{cnae}/p/all"
+r = requests.get(url, verify=False)  # verify=False só para teste rápido
+r.raise_for_status()\
+  
+# Transforma o JSON em DataFrame
+data = r.json()
+df = pd.DataFrame(data[0:],)  # pula o primeiro item (metadados)
+
+# Exibe o resultado
+print(df.head())
+
+#endregion
+
+
+
+# 1.4. TRATAMENTO DE DADOS
+#region
+#Aqui ele retorna um Dataframe horrosroso então vamos deixar ele bonitinho
+
+# Renomear colunas e criar variáveis
+df.columns = df.iloc[0]
+df = df.drop(0)
+nome_variavel = df.loc[1, 'Variável'] 
+código_variavel = df.loc[1, 'Variável (Código)'] 
+nome_CNAE = df.loc[1, 'Classificação Nacional de Atividades Econômicas (CNAE 2.0)']
+codigo_CNAE = df.loc[1, 'Classificação Nacional de Atividades Econômicas (CNAE 2.0) (Código)']
+
+print(df.head(1))
+print(df.columns)
+
+# Formatando 
+df = df[['Ano (Código)', 'Valor']].rename(columns={'Ano (Código)': 'Ano', 'Valor': nome_variavel})
+df = df.set_index('Ano')
+df[nome_variavel].astype(float)
+
+#endregion
+
+
+
+# 1.5. EXPORTAR ISSO EM UM EXCEL
+df.to_excel('dados_sidra.xlsx')
+
+
+#endregion
+
+
+				
+
+
+
+
+
+
+
+
+
+
+
+
+sidra_series = {
+    "industrial_production": fetch_sidra_monthly("8888", "12606", "industrial_production", {"544": "129314"}),
+    "manu_production":      fetch_sidra_monthly("8888", "12606", "manu_production", {"544": "129316"}),
+    "ext_production":       fetch_sidra_monthly("8888", "12606", "ext_production", {"544": "129315"}),
+    "services":             fetch_sidra_monthly("5906", "7167", "services", {"11046": "56726"}),
+    "ipca":                 fetch_sidra_monthly("1737", "2266", "ipca", None),
+    "ipca15":               fetch_sidra_monthly("3065", "1117", "ipca15", None),
+    "inpc":                 fetch_sidra_monthly("1736", "2289", "inpc", None),
+    "sales_retail":         fetch_sidra_monthly("8881", "7169", "sales_retail", {"11046": "56736"}),
+}
