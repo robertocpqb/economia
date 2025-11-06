@@ -1,0 +1,141 @@
+#2. COLETOR DE DADOS IPEA
+#region
+
+
+# 2.1. CARREGAR BIBLIOTECAS E CONFIGURAÇÕES GLOBAIS
+#region
+# Primeira coisa deve ser rodar isso aqui no terminal pra ele poder baixar as bibliotecas necessárias
+
+# Depois baixamos as seguintes bibliotecas
+# 1.1 Bibliotecas
+import ipeadatapy
+import requests
+import pandas as pd
+
+#endregion
+
+
+
+# 2.2 DEFININDO AS FUNÇÕES, SEM ATRIBUIR NENHUM PARAMETRO
+#region
+def basic_api_call(api):
+    response = requests.get(api, timeout=10)
+    if response.status_code == 200:
+        data = response.json()
+        if 'value' in data:
+            return pd.DataFrame(data['value'])
+    return None
+
+def ipeadata(serie, groupby=None):
+    if groupby:
+        return None  # não vamos usar groupby agora
+    api = f"https://ipeadata.gov.br/api/v1/ValoresSerie(SERCODIGO='{serie}')"
+    return basic_api_call(api)
+
+#endregion
+
+
+
+# 2.3. REQUISIÇÃO VIA API DO SIDRA 
+#region
+
+df = ipeadata('ECONMI12_USPCG12')
+print(df.head())
+#endregion
+
+
+
+# 2.4 TRATAMENTO DE DADOS
+#region
+
+df['VALDATA'] = pd.to_datetime(df['VALDATA'], errors='coerce', utc=True).dt.tz_localize(None).dt.date
+df = df.set_index("VALDATA")[["VALVALOR"]]
+print(df.head())
+
+#endregion
+
+
+
+# 2.5 REGION
+#region
+ipeadatapy.timeseries('ECONMI12_USPCG12')
+
+#endregion
+
+
+
+
+
+
+
+import pandas as pd
+
+def fetch_ipeadata(code: 'ECONMI12_USPCG12', name: 'CPI 12 meses') -> pd.DataFrame:
+    """Wrapper IPEADataPy com nome explícito."""
+    try:
+        df = ipea.timeseries(code)
+    except Exception as e:
+        print("erro ao chamar ipea.timeseries:", e)
+        return pd.DataFrame()
+
+    if df is None or df.empty:
+        return pd.DataFrame()
+
+    cols_val = [c for c in df.columns if "value" in c.lower()]
+    if not cols_val:
+        num = df.select_dtypes("number").columns
+        if len(num) == 0:
+            print("coluna de valor não encontrada")
+            return pd.DataFrame()
+        col = num[0]
+    else:
+        col = cols_val[0]
+
+    out = df[[col]].rename(columns={col: name})
+    try:
+        out.index = pd.to_datetime(out.index).to_period("M").to_timestamp()
+    except Exception:
+        pass
+
+    return out
+
+
+
+dados = fetch_ipeadata("ECONMI12_USPCG12", "IPC 12m EUA")
+print(dados)
+
+
+
+
+#endregion
+
+
+
+
+
+
+
+
+# IPEA + BCB (exemplos principais — mantenha/expanda conforme necessário)
+series_list = [
+    # IPEADATA
+    fetch_ipeadata("ANBIMA12_TJTLN1212", "interestrate"),
+    fetch_ipeadata("PAN12_XTV12", "exports"),
+    fetch_ipeadata("PAN12_MTV12", "imports"),
+    fetch_ipeadata("BM12_M0N12", "m0"),
+    fetch_ipeadata("BM12_M1MN12", "m1"),
+    fetch_ipeadata("BM12_M2NCN12", "m2"),
+    fetch_ipeadata("PAN12_ERV12", "dolar"),
+    fetch_ipeadata("ELETRO12_CEEIND12", "consumo_energia_ind"),
+    fetch_ipeadata("ELETRO12_CEECOM12", "consumo_comercial"),
+    fetch_ipeadata("ELETRO12_CEEOUT12", "consumo_outros"),
+    fetch_ipeadata("IFS12_SOJAGP12", "soja"),
+    fetch_ipeadata("IFS12_MAIZE12", "milho"),
+    fetch_ipeadata("FUNCEX12_TTR12", "troca"),
+    fetch_ipeadata("CNI12_PEEMP12", "emprego_ind_cni"),
+    fetch_ipeadata("CE12_CUTIND12", "nuci_fgv"),
+    fetch_ipeadata("ABPO12_PAPEL12", "caixas"),
+    fetch_ipeadata("IBSIE12_QSCFG12", "prod_ferro_gusa"),
+    fetch_ipeadata("ANP12_CDEPET12", "consumo_derivados"),
+    fetch_ipeadata("ANP12_PDPET12", "prod_petroleo"),
+    fetch_ipeadata("FENABRAVE12_VENDVETOT12", "fenabrave"),
