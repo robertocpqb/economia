@@ -1,0 +1,233 @@
+
+# 1. CARREGAR BIBLIOTECAS E CONFIGURAÇÕES GLOBAIS
+%pip install pandas openpyxl ipeadatapy sidrapy plotly 
+
+# 1.1 Bibliotecas
+import plotly.graph_objects as go
+import numpy as np
+import pandas as pd
+import ipeadatapy as ipea
+import requests
+import ipykernel
+from sidrapy import get_table  
+
+print("Iniciando a coleta de dados...")
+
+print(
+    "versions ->",
+    "numpy", np.__version__,
+    "| pandas", pd.__version__,
+)
+
+
+
+
+
+
+
+# 2. FUNÇÕES DE COLETA
+
+def fetch_ipeadata(code: str, name: str) -> pd.DataFrame:
+    """Wrapper IPEADataPy com nome explícito."""
+    try:
+        df = ipea.timeseries(code)
+        col_val = [c for c in df.columns if "VALUE" in c][0]
+        df = df[[col_val]].rename(columns={col_val: name})
+        df.index = pd.to_datetime(df.index).to_period("M").to_timestamp()
+        return df
+    except Exception as e:
+        print(f"ERRO[IPEA {name} {code}]: {e}")
+        return pd.DataFrame()
+
+
+def fetch_ipeadata("PAN12_XTV12", "exports") -> pd.DataFrame:
+
+
+def fetch_sidra_monthly(table_code: str, variable: str, name: str, classifications: dict | None = None) -> pd.DataFrame:
+    """Série mensal do SIDRA (retorna MS)."""
+    try:
+        df = get_table(
+            table_code=table_code,
+            territorial_level="1",
+            ibge_territorial_code="all",
+            period="all",
+            variable=variable,
+            classifications=classifications,
+        )
+        df = df.rename(columns={"D2C": "date", "V": name})
+        df["date"] = pd.to_datetime(df["date"], format="%Y%m", errors="coerce")
+        df[name] = pd.to_numeric(df[name], errors="coerce")
+        out = df.dropna(subset=["date"]).set_index("date")[[name]].asfreq("MS")
+        return out
+    except Exception as e:
+        print(f"ERRO[SIDRA {name}]: {e}")
+        return pd.DataFrame()
+
+
+def fetch_sidra_quarterly(table_code: str, variable: str, name: str, classifications: dict | None = None) -> pd.DataFrame:
+    """Série trimestral do SIDRA com índice no fim do trimestre (date = fim do mês do tri)."""
+    try:
+        df = get_table(
+            table_code=table_code,
+            territorial_level="1",
+            ibge_territorial_code="all",
+            period="all",
+            variable=variable,
+            classifications=classifications,
+        )
+        df = df.rename(columns={"D2C": "quarter", "V": name})
+        df = df[df["quarter"].str.isnumeric()]
+        df["year"] = df["quarter"].str[:4].astype(int)
+        df["qtr"] = df["quarter"].str[4:].astype(int)
+        df = df[df["qtr"].between(1, 4)]
+        df["date"] = pd.PeriodIndex.from_fields(year=df["year"], quarter=df["qtr"], freq="Q").to_timestamp(how="end")
+        df[name] = pd.to_numeric(df[name], errors="coerce")
+        out = df.set_index("date")[[name]].sort_index()
+        return out
+    except Exception as e:
+        print(f"ERRO[SIDRA trimestral {name}]: {e}")
+        return pd.DataFrame()
+
+
+def fetch_sidra_sum_categories(table_code: str, variable: str, classifications: dict, name: str) -> pd.DataFrame:
+    """Obtém categorias múltiplas do SIDRA e agrega (soma) por mês."""
+    try:
+        df = get_table(
+            table_code=table_code,
+            territorial_level="1",
+            ibge_territorial_code="all",
+            variable=variable,
+            classifications=classifications,
+            period="all",
+        )
+        df = df.rename(columns={"D2C": "mes_codigo", "V": name})
+        df["date"] = pd.to_datetime(df["mes_codigo"], format="%Y%m", errors="coerce")
+        df[name] = pd.to_numeric(df[name], errors="coerce")
+        out = df.groupby("date", as_index=False)[name].sum().set_index("date").asfreq("MS")
+        return out
+    except Exception as e:
+        print(f"ERRO[SIDRA soma {name}]: {e}")
+        return pd.DataFrame()
+
+
+def fetch_bcb(code: int, name: str) -> pd.DataFrame:
+    try:
+        url = f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{code}/dados?formato=json"
+        r = requests.get(url, verify=False, timeout=60)
+        r.raise_for_status()
+        data = pd.DataFrame(r.json())
+        data['data'] = pd.to_datetime(data['data'], dayfirst=True)
+        data['valor'] = pd.to_numeric(data['valor'], errors="coerce")
+        return data.set_index('data').rename(columns={'valor': name}).to_period("M").to_timestamp()
+    except Exception as e:
+        print(f"ERRO[BCB {name} {code}]: {e}")
+        return pd.DataFrame()
+
+
+
+
+
+
+
+
+
+
+
+# ---------------------------
+# 3. COLETA
+# ---------------------------
+
+# CAGED (duas variantes do IPEA)
+try:
+    caged1 = fetch_ipeadata("CAGED12_SALDON12", "caged")
+    caged2 = fetch_ipeadata("CAGED12_SALDO12", "caged")
+    caged = pd.concat([caged1, caged2]).sort_index()
+    caged = caged[~caged.index.duplicated(keep='last')]
+except Exception:
+    caged = pd.DataFrame()
+
+# IPEA + BCB (exemplos principais — mantenha/expanda conforme necessário)
+series_list = [
+    # IPEADATA
+    fetch_ipeadata("ANBIMA12_TJTLN1212", "interestrate"),
+    fetch_ipeadata("PAN12_XTV12", "exports"),
+    fetch_ipeadata("PAN12_MTV12", "imports"),
+    fetch_ipeadata("BM12_M0N12", "m0"),
+    fetch_ipeadata("BM12_M1MN12", "m1"),
+    fetch_ipeadata("BM12_M2NCN12", "m2"),
+    fetch_ipeadata("PAN12_ERV12", "dolar"),
+    fetch_ipeadata("ELETRO12_CEEIND12", "consumo_energia_ind"),
+    fetch_ipeadata("ELETRO12_CEECOM12", "consumo_comercial"),
+    fetch_ipeadata("ELETRO12_CEEOUT12", "consumo_outros"),
+    fetch_ipeadata("IFS12_SOJAGP12", "soja"),
+    fetch_ipeadata("IFS12_MAIZE12", "milho"),
+    fetch_ipeadata("FUNCEX12_TTR12", "troca"),
+    fetch_ipeadata("CNI12_PEEMP12", "emprego_ind_cni"),
+    fetch_ipeadata("CE12_CUTIND12", "nuci_fgv"),
+    fetch_ipeadata("ABPO12_PAPEL12", "caixas"),
+    fetch_ipeadata("IBSIE12_QSCFG12", "prod_ferro_gusa"),
+    fetch_ipeadata("ANP12_CDEPET12", "consumo_derivados"),
+    fetch_ipeadata("ANP12_PDPET12", "prod_petroleo"),
+    fetch_ipeadata("FENABRAVE12_VENDVETOT12", "fenabrave"),
+
+    # BANCO CENTRAL (BCB)
+    fetch_bcb(24363, "economic_activity"),
+    fetch_bcb(21340, "house_index"),
+    fetch_bcb(1338, "vendas_industriais"),
+    fetch_bcb(24348, "horas_trabalhadas"),
+    fetch_bcb(4394, "economic_conditions"),
+    fetch_bcb(1378, "sales_vehicles"),
+    fetch_bcb(4189, "selic"),
+    fetch_bcb(20624, "credito_pf"),
+    fetch_bcb(20623, "credito_pj"),
+    fetch_bcb(20633, "concessoes_pf"),
+    fetch_bcb(20632, "concessoes_pj"),
+    fetch_bcb(7357, "prod_aco"),
+    fetch_bcb(3546, "reservas"),
+    fetch_bcb(4513, "divida_liquida"),
+    fetch_bcb(5793, "primario"),
+    fetch_bcb(22701, "conta_corrente"),
+    fetch_bcb(22885, "IDP"),
+    fetch_bcb(29026, "renda"),
+    fetch_bcb(27574, "icbr"),
+    fetch_bcb(27575, "icbr_agro"),
+    fetch_bcb(4392, "cdi"),
+    fetch_bcb(29263, "compr_renda_fam_amort"),
+    fetch_bcb(29264, "compr_renda_fam_juros"),
+    fetch_bcb(29265, "compr_renda_fam_div"),
+    fetch_bcb(21003, "credito_15dias"),
+    fetch_bcb(21082, "inadimplencia"),
+]
+
+# SIDRA (mensal)
+sidra_series = {
+    "industrial_production": fetch_sidra_monthly("8888", "12606", "industrial_production", {"544": "129314"}),
+    "manu_production":      fetch_sidra_monthly("8888", "12606", "manu_production", {"544": "129316"}),
+    "ext_production":       fetch_sidra_monthly("8888", "12606", "ext_production", {"544": "129315"}),
+    "services":             fetch_sidra_monthly("5906", "7167", "services", {"11046": "56726"}),
+    "ipca":                 fetch_sidra_monthly("1737", "2266", "ipca", None),
+    "ipca15":               fetch_sidra_monthly("3065", "1117", "ipca15", None),
+    "inpc":                 fetch_sidra_monthly("1736", "2289", "inpc", None),
+    "sales_retail":         fetch_sidra_monthly("8881", "7169", "sales_retail", {"11046": "56736"}),
+}
+
+# PIB trimestral YoY — SIDRA 5932/6561 com ajuste para o fim do tri
+gdp = fetch_sidra_quarterly("5932", "6561", "gdp", {"11255": "90707"})
+
+
+
+
+
+
+
+print(sidra_series['industrial_production'].tail())
+
+
+
+
+
+
+sidra_series['industrial_production'].loc["2003-01-01":].plot(
+    figsize=(10,4), title="Título"
+)
+
