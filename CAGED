@@ -1,0 +1,51 @@
+import subprocess
+import py7zr
+import pandas as pd
+
+
+url = "ftp://ftp.mtps.gov.br/pdet/microdados/NOVO%20CAGED/2024/202409/CAGEDMOV202409.7z"
+output = "CAGEDMOV202409.7z"
+
+subprocess.run(["curl", "-o", output, url])
+
+with py7zr.SevenZipFile("CAGEDMOV202409.7z", mode="r") as z:
+    z.extractall(path="caged_dados")
+
+
+df = pd.read_csv("caged_dados/CAGEDMOV202409.txt", sep=";", encoding="latin1")
+print(df.head())
+
+print(df.columns)
+
+df.columns = ['competênciamov', 'regiâo', 'uf', 'município', 'seção',
+       'subclasse', 'saldomovimentação', 'cbo2002ocupação', 'categoria',
+       'graudeinstrução', 'idade', 'horascontratuais', 'raçacor', 'sexo',
+       'tipoempregador', 'tipoestabelecimento', 'tipomovimentação',
+       'tipodedeficiência', 'indtrabintermitente', 'indtrabparcial',
+       'salário', 'tamestabjan', 'indicadoraprendiz', 'origemdainformaação',
+       'competênciadec', 'indicadordeforadoprazo', 'unidadesaláriocódigo',
+       'valorsaláriofixo']
+
+print(df['salário'])
+print(df['horascontratuais'])
+print(df['sexo'])
+
+
+df['salário'] = pd.to_numeric(
+    df['salário'].str.replace(',', '.', regex=False),
+    errors='coerce')
+
+
+df['horascontratuais'] = pd.to_numeric(
+    df['horascontratuais'].str.replace(',', '.', regex=False),
+    errors='coerce')
+
+
+
+print(df['salário'].mean())
+
+
+
+tabela_sexo = df.pivot_table(values='salário', columns='sexo', aggfunc='mean')
+print(tabela_sexo)
+
