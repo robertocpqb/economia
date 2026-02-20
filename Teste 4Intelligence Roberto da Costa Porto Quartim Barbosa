@@ -1,0 +1,269 @@
+# É PRECISO ALTERAR O NOME DO DIRETÓRIO ONDE BUSCAR OS ARQUIVOS NA LINHA 45
+
+
+# 1.0 Importaçoes
+#region
+
+# Já tendo baixado o zipfile lme_prices
+import pandas as pd
+import openpyxl
+import os
+from pathlib import Path
+import matplotlib.pyplot as plt
+
+# Importando pro Código as séries de tempo
+
+
+# Listas dos meses e anos
+#region
+
+months = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"]
+
+years = range(2020, 2026)
+
+#endregion
+
+
+# Definindo onde tem que buscar tudo
+#region
+folder = Path(r"C:\Users\RCPQBarbosa\Desktop\VS Code\lme_prices\prices")
+
+print(folder.exists())
+print(len(list(folder.glob("*.xlsx"))))
+
+#endregion
+
+
+# Dicionário para guardar os dataframes
+dfs = {}
+
+
+
+# Caminho da pasta onde estão os arquivos
+folder = Path(r"C:/Users/RCPQBarbosa/Desktop/VS Code/lme_prices/prices") # <-- ajuste aqui
+
+
+
+# Loop pra baixar todos os arquivos
+
+#region
+for year in years:
+    for month in months:
+
+        file_name = f"{month} {year} No Steel  Molybdenum.xlsx"
+        file_path = folder / file_name
+        
+        if file_path.exists():
+            df = pd.read_excel(file_path, sheet_name="Copper", header=7, usecols="B:K")
+            df = df.rename(columns={df.columns[0]: "Date"})
+            df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+            dfs[f"{month}_{year}"] = df
+            print(f"{file_name} carregado")
+        else:
+            print(f"{file_name} não encontrado")
+            
+#endregion
+
+
+
+# Juntando todos os DataFrames
+#region
+if dfs:
+    df_final = pd.concat(dfs.values(), ignore_index=True)
+else:
+    df_final = pd.DataFrame()
+    print("Nenhum arquivo foi carregado (dfs vazio).")
+
+ #endregion
+ 
+ 
+ 
+df_final.to_excel('meu arquivo.xlsx')
+ 
+ 
+print(df_final)
+ 
+#endregion
+ 
+ 
+ 
+# 2.0 Tratamento dos dados
+#region
+
+# Vamos criar um novo Dataframe apenas com as colunas que queremos?
+# A segunda que tem as datas das cotações
+# E a quarta que tem os valores cash seller
+
+df_copper = df_final[["Date", "SELLER"]].dropna()
+df_copper.columns = ['Data', 'Cotação']
+df_copper["Data"] = pd.to_datetime(df_copper["Data"]).dt.date
+
+
+#df_copper.to_excel('meu arquivo cobre.xlsx', index=False)
+
+#endregion
+
+
+
+# 3.0 Análise dos dados
+# Agora com a base de dados consolidada podemos partir para as análises solicitadas
+
+
+# 1. Quando o cobre atingiu sua menor cotação?
+#region
+idx_min = df_copper["Cotação"].idxmin()
+
+
+# Extrai valores
+data_min = df_copper.loc[idx_min, "Data"]
+valor_min = df_copper.loc[idx_min, "Cotação"]
+
+
+# Respostas organizadas
+print("1. Quando o cobre atingiu sua menor cotação?")
+print(f"O cobre atingiu sua cotação mínima de U$ {valor_min} em {data_min}.")
+
+#endregion
+
+
+
+# 2. Quando o cobre atingiu sua maior cotação?
+#region
+idx_max = df_copper["Cotação"].idxmax()
+
+
+# Extrai valores
+data_max = df_copper.loc[idx_max, "Data"]
+valor_max = df_copper.loc[idx_max, "Cotação"]
+
+
+# Respostas organizadas
+print("\n2. Quando o cobre atingiu sua maior cotação?")
+print(f"O cobre atingiu sua cotação máxima de U$ {valor_max} em {data_max}.")
+
+#endregion
+
+
+
+# 3. Qual foi a variação média mensal de 2020? E a de 2024?
+#region
+
+df_copper = df_copper.sort_values("Data").dropna(subset=["Data", "Cotação"])
+
+# Último preço de cada mês (para retorno mensal)
+mensal_last = df_copper.set_index("Data")["Cotação"].resample("M").last()
+
+# Retorno mensal em %
+ret_mensal = mensal_last.pct_change() * 100
+
+# Transforma em DataFrame e separa Ano/Mês
+ret_mensal = ret_mensal.dropna().to_frame("RetornoMensal_%").reset_index()
+ret_mensal["Ano"] = ret_mensal["Data"].dt.year
+ret_mensal["Mês"] = ret_mensal["Data"].dt.month
+
+# Média mensal (em %) para 2020 e 2024
+media_2020 = ret_mensal.loc[ret_mensal["Ano"] == 2020, "RetornoMensal_%"].mean()
+media_2024 = ret_mensal.loc[ret_mensal["Ano"] == 2024, "RetornoMensal_%"].mean()
+
+print(ret_mensal)
+print("Variação média mensal em 2020 (%):", media_2020.round(2))
+print("Variação média mensal em 2024 (%):", media_2024.round(2))
+
+
+#endregion
+
+
+
+# 4. Qual foi a variação acumulada entre 02/01/2020 e 31/12/2025?
+#region
+
+df_copper["Data"] = pd.to_datetime(df_copper["Data"])
+df_copper["Cotação"] = pd.to_numeric(df_copper["Cotação"], errors="coerce")
+
+inicio = df_copper[df_copper["Data"] >= "2020-01-02"]["Cotação"].iloc[0]
+fim = df_copper[df_copper["Data"] <= "2025-12-31"]["Cotação"].iloc[-1]
+
+variacao_acumulada = (fim / inicio) - 1
+
+print(f"Variação acumulada 02/01/2020 e 31/12/2025: {variacao_acumulada:.2%}")
+
+#endregion
+
+
+
+# 5. Produza um gráfico com a média mensal dos preços no período analisado.
+#region
+
+# Média mensal (para o gráfico), removendo alguns meses que estavam vazios
+mensal = df_copper.set_index("Data")["Cotação"].resample("M").mean().dropna()
+
+plt.plot(mensal.index, mensal.values/1000, color="#4c94ff")
+plt.xlabel("Data")
+plt.ylabel("Valor (mil US$)")
+plt.title("Valor Mensal")
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.show()
+
+print(df_copper)
+print(mensal[mensal.isna()])
+
+#endregion
+
+
+
+# 6. Produza um gráfico com frequência trimestral das cotações no último dia de cada trimestre.
+# region
+
+trimestral = (
+    df_copper
+    .set_index("Data")["Cotação"]
+    .resample("Q")
+    .last()
+    .dropna()
+)
+
+print(trimestral)
+
+plt.figure(figsize=(8,5))
+plt.hist(trimestral.values/1000, bins=10, color="#4c94ff")
+plt.xlabel("Cotação (mil U$)")
+plt.gca().xaxis.set_major_formatter(mticker.FormatStrFormatter('%.0f'))
+plt.ylabel("Frequência")
+plt.title("Histograma - Cotação Trimestral (Último Dia do Trimestre)")
+plt.tight_layout()
+plt.show()
+
+#endregion
+
+
+
+# 7. Produza um gráfico de variação anual para todo o período analisado.
+#region
+
+# Último preço de cada ano
+anual = (
+    df_copper
+    .set_index("Data")["Cotação"]
+    .resample("Y")
+    .last()
+)
+
+# Variação anual (%)
+ret_anual = anual.pct_change() * 100
+ret_anual = ret_anual.dropna()
+
+print(ret_anual)
+
+
+plt.figure(figsize=(8,5))
+plt.bar(ret_anual.index.year, ret_anual.values, color="#4c94ff")
+plt.xlabel("Ano")
+plt.ylabel("Variação Anual (%)")
+plt.title("Variação Anual da Cotação do Cobre")
+plt.tight_layout()
+plt.show()
+
+#endregion
