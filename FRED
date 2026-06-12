@@ -21,9 +21,10 @@ Uso::
 
     # Séries de referência por frequência e grupo
     fred.SERIES_FRED["monthly"]["pol_mon"]
-"""
-from __future__ import annotations
 
+"""
+
+from __future__ import annotations
 import os
 from datetime import datetime
 from urllib.parse import urlencode
@@ -32,6 +33,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+# region CONSTANTES
 _BASE = "https://api.stlouisfed.org/fred"
 _RETRY_TOTAL = 3
 _RETRY_BACKOFF = 0.5
@@ -39,12 +41,10 @@ _FRED_REGISTER_URL = "https://fred.stlouisfed.org/docs/api/api_key.html"
 _FRED_DOC_URL = "https://fred.stlouisfed.org/docs/api/fred/"
 _MSG_TOKEN = (
     "Documentação FRED: "
-    f"{_FRED_DOC_URL} | Registro de token: {_FRED_REGISTER_URL}"
-)
+    f"{_FRED_DOC_URL} | Registro de token: {_FRED_REGISTER_URL}")
+# endregion
 
-# ---------------------------------------------------------------------------
-# Séries de referência por frequência e grupo temático
-# ---------------------------------------------------------------------------
+# region SERIES_FRED
 SERIES_FRED: dict[str, dict[str, list[str]]] = {
     "daily": {
         "pol_mon": [
@@ -85,23 +85,23 @@ SERIES_FRED: dict[str, dict[str, list[str]]] = {
             "IPB50001N",          # Produção industrial bens de capital
         ],
         "pol_mon": [
-            "CPIAUCSL",   # CPI — todos os itens, SA
-            "CPILFESL",   # CPI — core, SA
-            "CUSR0000SAS",# CPI — serviços, SA
-            "UNRATE",     # Taxa de desemprego
-            "DFEDTARU",   # Fed Funds target — limite superior
-            "DFEDTARL",   # Fed Funds target — limite inferior
-            "FEDFUNDS",   # Fed Funds effective rate
-            "RTWEXBGS",   # Real US Dollar Index — Broad
+            "CPIAUCSL",    # CPI — todos os itens, SA
+            "CPILFESL",    # CPI — core, SA
+            "CUSR0000SAS", # CPI — serviços, SA
+            "UNRATE",      # Taxa de desemprego
+            "DFEDTARU",    # Fed Funds target — limite superior
+            "DFEDTARL",    # Fed Funds target — limite inferior
+            "FEDFUNDS",    # Fed Funds effective rate
+            "RTWEXBGS",    # Real US Dollar Index — Broad
         ],
         "quimicos": [
-            "PCU325220325220",    # PPI Resinas sintéticas
-            "PCU325212325212P",   # PPI Plásticos em formas primárias
-            "PCU325199325199P",   # PPI Outros químicos básicos
-            "PCU326220326220P",   # PPI Embalagens plásticas
-            "WPU031502412",       # PPI Etanol industrial
-            "WPU06790918",        # PPI Especialidades químicas
-            "PCU325325",          # PPI Produtos químicos em geral
+            "PCU325220325220",   # PPI Resinas sintéticas
+            "PCU325212325212P",  # PPI Plásticos em formas primárias
+            "PCU325199325199P",  # PPI Outros químicos básicos
+            "PCU326220326220P",  # PPI Embalagens plásticas
+            "WPU031502412",      # PPI Etanol industrial
+            "WPU06790918",       # PPI Especialidades químicas
+            "PCU325325",         # PPI Produtos químicos em geral
         ],
     },
     "quarterly": {
@@ -112,19 +112,14 @@ SERIES_FRED: dict[str, dict[str, list[str]]] = {
     "yearly": {},
 }
 """Séries FRED organizadas por frequência e grupo temático."""
+# endregion
 
-
-# ---------------------------------------------------------------------------
-# Exceção dedicada
-# ---------------------------------------------------------------------------
+# region EXCEÇÃO
 class FredError(Exception):
     """Erro de comunicação ou resposta inválida da API FRED."""
+# endregion
 
-
-# ---------------------------------------------------------------------------
-# Helpers internos
-# ---------------------------------------------------------------------------
-
+# region _load_env / _get_token
 def _load_env() -> None:
     try:
         from dotenv import load_dotenv
@@ -145,8 +140,9 @@ def _get_token() -> str:
             f"{_FRED_REGISTER_URL} | Documentacao: {_FRED_DOC_URL}"
         )
     return str(token).strip()
+# endregion
 
-
+# region _build_session
 def _build_session() -> requests.Session:
     session = requests.Session()
     retry = Retry(
@@ -162,8 +158,9 @@ def _build_session() -> requests.Session:
     session.mount("https://", adapter)
     session.mount("http://", adapter)
     return session
+# endregion
 
-
+# region _parse_date
 def _parse_date(value: str | datetime | None) -> str | None:
     """Converte date para string YYYY-MM-DD aceita pela API FRED."""
     if value is None:
@@ -173,8 +170,9 @@ def _parse_date(value: str | datetime | None) -> str | None:
     value = str(value).strip()
     datetime.strptime(value, "%Y-%m-%d")
     return value
+# endregion
 
-
+# region _request
 def _request(
     session: requests.Session,
     url: str,
@@ -216,7 +214,6 @@ def _request(
     except ValueError as exc:
         raise FredError(f"A API FRED retornou JSON inválido. URL: {url}") from exc
 
-    # Erros embutidos no JSON com status 200
     if isinstance(data, dict) and data.get("error_message"):
         msg = data["error_message"]
         if "api_key" in msg.lower():
@@ -228,8 +225,9 @@ def _request(
         raise FredError(f"Erro da API FRED: {msg}. URL: {url}")
 
     return data
+# endregion
 
-
+# region _build_url / _convert_value
 def _build_url(endpoint: str, params: dict) -> str:
     params["file_type"] = "json"
     return f"{_BASE}/{endpoint}?{urlencode(params)}"
@@ -243,12 +241,19 @@ def _convert_value(raw: str) -> float | None:
         return float(raw)
     except (ValueError, TypeError):
         return None
+# endregion
 
 
 # ---------------------------------------------------------------------------
 # Funções públicas
 # ---------------------------------------------------------------------------
 
+# FUNÇÃO GET
+# Esta é a função principal. 
+# Ela conecta no FRED e extrai os valores históricos 
+# de um indicador específico (chamado de series_id).
+
+#region
 def get(
     series_id: str,
     date_init: str | datetime | None = None,
@@ -345,6 +350,17 @@ def get(
         for obs in observations
     ]
 
+#endregion
+
+
+
+
+# FUNÇÃO METADADOS
+# Esta é a função principal. 
+# Ela conecta no FRED e extrai os valores históricos 
+# de um indicador específico (chamado de series_id).
+
+#region
 
 def metadados(
     series_id: str,
@@ -391,7 +407,17 @@ def metadados(
         raise FredError(f"Série FRED '{series_id}' não encontrada.")
     return series_list[0]
 
+#endregion
 
+
+
+
+# FUNÇÃO BUSCAR
+# Se você quer analisar a inflação no Brasil, 
+# mas não faz ideia de qual é o código numérico/alfabético que o FRED 
+# usa para isso, você usa esta função.
+
+#region
 def buscar(
     texto: str,
     limit: int = 100,
@@ -464,8 +490,13 @@ def buscar(
         session.close()
 
     return data.get("seriess", [])
+#endregion
 
 
+
+# FUNÇÕES AUXILIARES
+
+# region 
 def categorias(
     category_id: int = 0,
     timeout: int = 30,
@@ -473,27 +504,7 @@ def categorias(
 ) -> dict:
     """
     Retorna informações de uma categoria FRED.
-
     ``category_id=0`` corresponde à categoria raiz (topo da hierarquia).
-
-    Parâmetros
-    ----------
-    category_id : int
-        ID da categoria FRED (padrão 0 = raiz).
-    timeout : int
-        Timeout em segundos (padrão 30).
-    api_key : str | None
-        Token FRED. Se None, usa TOKEN_FRED do ambiente.
-
-    Retornos
-    --------
-    dict
-        Dicionário com ``id``, ``name``, ``parent_id``.
-
-    Exemplos
-    --------
-    >>> raiz = fred.categorias()                # categoria raiz
-    >>> macro = fred.categorias(125)            # Macroeconomics
     """
     key = api_key if api_key is not None else _get_token()
     session = _build_session()
@@ -515,29 +526,7 @@ def series_categoria(
     timeout: int = 30,
     api_key: str | None = None,
 ) -> list[dict]:
-    """
-    Lista as séries pertencentes a uma categoria FRED.
-
-    Parâmetros
-    ----------
-    category_id : int
-        ID da categoria FRED.
-    limit : int
-        Número máximo de séries retornadas (padrão 100).
-    timeout : int
-        Timeout em segundos (padrão 30).
-    api_key : str | None
-        Token FRED. Se None, usa TOKEN_FRED do ambiente.
-
-    Retornos
-    --------
-    list[dict]
-        Lista de metadados de séries (mesma estrutura de ``metadados()``).
-
-    Exemplos
-    --------
-    >>> series = fred.series_categoria(125)   # séries da categoria Macroeconomics
-    """
+    """Lista as séries pertencentes a uma categoria FRED."""
     key = api_key if api_key is not None else _get_token()
     session = _build_session()
     try:
@@ -554,30 +543,7 @@ def tags(
     timeout: int = 30,
     api_key: str | None = None,
 ) -> list[dict]:
-    """
-    Retorna as tags associadas a uma série FRED.
-
-    Parâmetros
-    ----------
-    series_id : str
-        Código da série FRED.
-    timeout : int
-        Timeout em segundos (padrão 30).
-    api_key : str | None
-        Token FRED. Se None, usa TOKEN_FRED do ambiente.
-
-    Retornos
-    --------
-    list[dict]
-        Lista de dicionários com ``name``, ``group_id``, ``notes``,
-        ``created``, ``popularity``, ``series_count``.
-
-    Exemplos
-    --------
-    >>> t = fred.tags("CPIAUCSL")
-    >>> [x["name"] for x in t]
-    ['bls', 'consumer price index', 'cpi', ...]
-    """
+    """Retorna as tags associadas a uma série FRED."""
     key = api_key if api_key is not None else _get_token()
     session = _build_session()
     try:
@@ -594,29 +560,7 @@ def release(
     timeout: int = 30,
     api_key: str | None = None,
 ) -> dict:
-    """
-    Retorna informações de um release FRED.
-
-    Parâmetros
-    ----------
-    release_id : int
-        ID do release FRED (ex.: 10 = Employment Situation).
-    timeout : int
-        Timeout em segundos (padrão 30).
-    api_key : str | None
-        Token FRED. Se None, usa TOKEN_FRED do ambiente.
-
-    Retornos
-    --------
-    dict
-        Dicionário com ``id``, ``name``, ``press_release``, ``link``, ``notes``.
-
-    Exemplos
-    --------
-    >>> r = fred.release(10)
-    >>> r["name"]
-    'Employment Situation'
-    """
+    """Retorna informações de um release FRED."""
     key = api_key if api_key is not None else _get_token()
     session = _build_session()
     try:
@@ -637,29 +581,7 @@ def series_release(
     timeout: int = 30,
     api_key: str | None = None,
 ) -> list[dict]:
-    """
-    Lista as séries pertencentes a um release FRED.
-
-    Parâmetros
-    ----------
-    release_id : int
-        ID do release FRED.
-    limit : int
-        Número máximo de séries (padrão 100).
-    timeout : int
-        Timeout em segundos (padrão 30).
-    api_key : str | None
-        Token FRED. Se None, usa TOKEN_FRED do ambiente.
-
-    Retornos
-    --------
-    list[dict]
-        Lista de metadados de séries.
-
-    Exemplos
-    --------
-    >>> series = fred.series_release(10, limit=50)
-    """
+    """Lista as séries pertencentes a um release FRED."""
     key = api_key if api_key is not None else _get_token()
     session = _build_session()
     try:
@@ -669,3 +591,4 @@ def series_release(
         session.close()
 
     return data.get("seriess", [])
+# endregion
